@@ -37,7 +37,7 @@ Function GUI_TextBox ($Input_Type){
     $label.AutoSize = $True
     $Font = New-Object System.Drawing.Font("Arial",12,[System.Drawing.FontStyle]::Bold) ### Formatting text for the label
     $label.Font = $Font
-    $label.Text = $Input_Type ### Text of label, variable used to provide more information to the user
+    $label.Text = $Input_Type ### Text of label, defined by the parameter that was used when the function is called
     $label.ForeColor = 'Red' ### Color of the label text
     $form.Controls.Add($label)
 
