@@ -1,0 +1,177 @@
+###############################################################################
+### Loading Citrix powershell snapins
+###############################################################################
+try{
+    ### Adding Citrix powershell snapins
+    Add-PsSnapin *Citrix* -ErrorAction Stop
+}
+Catch [Exception]{ ### If the command inside the try statement fails the error will be outputted
+    Write-host "Citrix Powershell snapins are not present, install the snapins and try again. Script is exiting..." -BackgroundColor Red -ForegroundColor White
+    Return
+}
+
+
+###############################################################################
+### Variables
+###############################################################################
+$Citrix_DC = "dc_server.domain.local"
+
+
+###############################################################################
+### List all current citrix tags via out-gridview
+###############################################################################
+Get-BrokerTag -AdminAddress $Citrix_DC  | Select Name, Description | Out-GridView -Title "All Active Citrix Tags"
+
+
+###############################################################################
+### List the members of a specific citrix tag
+###############################################################################
+### Out-gridview for user to select the citrix tag they want to find which members (Desktops) are tagged
+$Tag_to_Search = Get-BrokerTag -AdminAddress $Citrix_DC | Select Name, Description | Out-GridView -Title "Select the Citrix Tag you want to grab members for" -OutputMode Single
+### Grabbing all the members (Desktops) that are tagged with the selected tag
+$Members_of_Tag = Get-BrokerDesktop -AdminAddress $Citrix_DC -Tag $Tag_to_Search.Name -MaxRecordCount 100000 | Select HostedMachineName, AssociatedUserFullNames, AssociatedUserNames, Tags, IPAddress 
+### If there are no members of the tag it will send output to console otherwise it will send an out-gridview
+If ($null -eq $Members_of_Tag){
+    Write-Host "No members of the selected TAG" -BackgroundColor Red -ForegroundColor White
+}
+Else{
+    $Members_of_Tag | Out-GridView -Title "Members of selected Tag"
+}
+
+
+
+###############################################################################
+### Create a NEW citrix tag
+###############################################################################
+$New_Tag_Name = Read-Host "Enter the NEW Tag Name (ie: Finance)"
+$New_Tag_Description = Read-Host "Enter the NEW Tag Description (ie: Finance Department)"
+
+try{
+    ### The creation of the new citrix tag
+    New-BrokerTag -AdminAddress $Citrix_DC -Description $New_Tag_Description -Name $New_Tag_Name
+    Write-Host "Process Complete" -BackgroundColor Green -ForegroundColor White
+}
+Catch [Exception]{ ### If the command inside the try statement fails the error will be outputted
+    $errormessage = $_.Exception.Message
+    Write-host $errormessage -BackgroundColor Red -ForegroundColor White
+}
+
+
+###############################################################################
+### REMOVE a Citrix Tag for a list of Desktop Names
+###############################################################################
+### Launch GUI textbox to accept input from user
+$Desktops = GUI_TextBox "Desktop Name(s):" ### This function was introduced in previous blog post
+$Desktop_Count = $Desktops | Measure-Object | % {$_.Count}
+If ($Desktop_Count -eq 0){ ### If nothing was inputed, the script will not continue
+    Write-Host "Nothing was inputed, script is exiting..." -BackgroundColor Red -ForegroundColor White
+    Return
+}
+Else{   
+    ### Gathering all the available tags that could be removed
+    $Tag_to_Remove_From_Desktops = Get-BrokerTag -AdminAddress $Citrix_DC | Select Name, Description | Out-GridView -Title "Select the Citrix Tag you want to REMOVE for the list of imported Desktop Names" -OutputMode Single
+
+    Write-host "Number of Desktop Names to remove from $($Tag_to_Remove_From_Desktops.Name) : $Desktop_Count" -BackgroundColor Cyan -ForegroundColor Black
+    $Remove_Tag_Confirm = Read-Host "Do you want to continue? (Y/N)"
+
+    If ($Remove_Tag_Confirm.ToUpper() -eq "Y"){
+        Foreach ($Desktop in $Desktops){ ### Going through each inputted Desktop name and removing the tag
+            try{
+                ### In order to remove a tag, we need to gather the uid of the Desktop
+                $Uid = Get-BrokerDesktop -HostedMachineName $Desktop -AdminAddress $Citrix_DC | % {$_.Uid}
+                ### Removal of the tag
+                Remove-BrokerTag $Tag_to_Remove_From_Desktops.Name -Desktop $Uid
+                Write-Host "Process Complete" -BackgroundColor Green -ForegroundColor White
+            }
+            Catch [Exception]{ ### If the command inside the try statement fails the error will be outputted
+                $errormessage = $_.Exception.Message
+                Write-host $errormessage -BackgroundColor Red -ForegroundColor White
+            }
+        }
+    }
+    Else{
+        Write-Host "User Canceled Script" -BackgroundColor Red -ForegroundColor White
+    }
+}
+
+
+###############################################################################
+### ADD a Citrix Tag for a list of Desktop Names
+###############################################################################
+### Launch GUI textbox to accept input from user
+$Desktops = GUI_TextBox "Desktop Name(s):" ### This function was introduced in previous blog post
+$Desktop_Count = $Desktops | Measure-Object | % {$_.Count}
+If ($Desktop_Count -eq 0){ ### If nothing was inputed, the script will not continue
+    Write-Host "Nothing was inputed, script is exiting..." -BackgroundColor Red -ForegroundColor White
+    Return
+}
+Else{  
+    ### Grabbing all the possible citrix tags
+    $Tag_to_Add_to_Desktops = Get-BrokerTag -AdminAddress $Citrix_DC | Select Name, Description | Out-GridView -Title "Select the Citrix Tag you want to ADD to Desktop Names" -OutputMode Single
+
+    Write-host "Number of Desktop Names to add to $($Tag_to_Add_to_Desktops.Name) : $HD_Count" -BackgroundColor Cyan -ForegroundColor Black
+    $Add_Tag_Confirm = Read-Host "Do you want to continue? (Y/N)"
+
+    If ($Add_Tag_Confirm.ToUpper() -eq "Y"){
+
+        Foreach ($Desktop in $Desktops){ ### Going through each inputted Desktop name and adding the tag
+            try{
+                ### In order to add a tag, we need to gather the uid of the Desktop
+                $Uid = Get-BrokerDesktop -HostedMachineName $Desktop -AdminAddress $Citrix_DC | % {$_.Uid}
+                ### Adding of the tag
+                Add-BrokerTag -Name $Tag_to_Add_to_Desktops.Name -Desktop $Uid -AdminAddress $Citrix_DC
+                Write-Host "Process Complete" -BackgroundColor Green -ForegroundColor White
+            }
+            Catch [Exception]{ ### If the command inside the try statement fails the error will be outputted
+                $errormessage = $_.Exception.Message
+                Write-host $errormessage -BackgroundColor Red -ForegroundColor White
+            }
+        }
+    }
+    Else{
+        Write-Host "User Canceled Script" -BackgroundColor Red -ForegroundColor White
+    }
+}
+
+
+###############################################################################
+### DELETE a Citrix Tag from the Database and clear all current associations
+###############################################################################
+### Grabbing all available citrix tags available to delete
+$Tag_to_Delete = Get-BrokerTag -AdminAddress $Citrix_DC | Select Name, Description | Out-GridView -Title "Select the Citrix Tag you want to DELETE" -OutputMode Single
+### Pulling all of the members of the selected tag to delete
+$Members_of_Tag_to_Delete = Get-BrokerDesktop -AdminAddress $Citrix_DC -Tag $Tag_to_Delete.Name -MaxRecordCount 100000 | Select HostedMachineName, AssociatedUserFullNames, Tags 
+
+If ($null -eq $Members_of_Tag_to_Delete){ ### If there are NO members of the selected tag then it will just delete the tag
+    Write-Host "No members of the selected TAG" -BackgroundColor Cyan -ForegroundColor Black
+    Remove-BrokerTag $Tag_to_Delete.Name -AdminAddress $Citrix_DC
+    Write-Host "Process Complete" -BackgroundColor Green -ForegroundColor White
+}
+Else{ ### If there are members of the selected tag then it will confirm that you really want to delete the tag
+    $Member_Count_To_Delete = $Members_of_Tag_to_Delete | Measure-Object | % {$_.Count} ### Counting the members of the tag to delete
+
+    Write-host "Number of Desktop Names to remove from $($Tag_to_Delete.Name) : $Member_Count_To_Delete" -BackgroundColor Cyan -ForegroundColor Black
+    $Remove_Tag_Confirm = Read-Host "Do you want to continue? (Y/N)"
+
+    If ($Remove_Tag_Confirm.ToUpper() -eq "Y"){
+        try{
+            ### Doing a loop on all the members in the given tag and removing that tag
+            Foreach ($Member in $Members_of_Tag_to_Delete.HostedMachineName){
+                ### In order to remove a tag, we need to gather the uid of the Desktop
+                $Uid = Get-BrokerDesktop -HostedMachineName $Member -AdminAddress $Citrix_DC | % {$_.Uid}
+                ### Removal of the tag
+                Remove-BrokerTag $Tag_to_Delete.Name -Desktop $Uid
+            }
+            ### After the tag has been removed from all of the members its time to delete the tag
+            Remove-BrokerTag $Tag_to_Delete.Name -AdminAddress $Citrix_DC
+            Write-Host "Process Complete" -BackgroundColor Green -ForegroundColor White
+        }
+        Catch [Exception]{ ### If the command inside the try statement fails the error will be outputted
+            $errormessage = $_.Exception.Message
+            Write-host $errormessage -BackgroundColor Red -ForegroundColor White
+        }
+    }
+    Else{
+        Write-Host "User Canceled Script" -BackgroundColor Red -ForegroundColor White
+    }
+}
