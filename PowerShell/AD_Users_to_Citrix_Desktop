@@ -1,0 +1,147 @@
+#############################################################################################
+### Modules / Snapins
+############################################################################################# 
+### Custom module we made in previous blog post
+Import-Module "\\path\to\Infra_Module.psm1" -Force
+
+### Citrix Snapin
+try{
+    ### Adding Citrix powershell snapins
+    Add-PsSnapin *Citrix* -ErrorAction Stop
+}
+Catch [Exception]{ ### If the command inside the try statement fails the error will be outputted
+    Write-host "Citrix Powershell snapins are not present, install the snapins and try again. Script is exiting..." -BackgroundColor Red -ForegroundColor White
+    Return
+}
+
+#############################################################################################
+### Variables
+############################################################################################# 
+$Time = Get-Date -Format "yyyy-MM-dd_HHmm"
+$csvfile = "\\path\to\AD_Users_to_Citrix_Report_$Time.csv"
+### Grabbing one random Citrix Delivery Controller server from each site based on the given environment, type and active status
+$Random_DCs = Infra_One_Random_Each_Site -Environment prod -Type citrix_dc -Active true ### Custom module we made in previous blog post
+$i=0 # setting variable to 0 for the start of the progress bar
+
+#############################################################################################
+### Function to write AD user details and Citrix Desktop details to csv file
+############################################################################################# 
+Function Write_to_csv {
+    ### Creating a custom object to hold all of the pertinent data so we can write it to csv
+    $outputcsv = [PSCustomObject] @{
+    VM = $VM
+    VM_IP = $IP
+    User_ID = $AD_User.SamAccountName
+    User_DisplayName = $AD_User.DisplayName
+    User_Email = $AD_User.Mail
+    User_Location = $AD_User.City
+    User_Department = $AD_User.Department
+    User_Title = $AD_User.Title
+    User_Created = $AD_User.whenCreated
+    Summary_State = $SummaryState
+    Last_Connection = $LastConnection
+    VM_Created = $Created
+    EndPoint_Name = $EndPoint
+    EndPoint_IP = $EndPoint_IP
+    }
+    ### Appending that custom object to the csv file
+    $outputcsv | Export-Csv -Path $csvfile -Append -NoTypeInformation
+}
+
+
+#############################################################################################
+### Query active directory for all enabled users with a manager and email address
+############################################################################################# 
+$AD_Users = Get-ADUser -Filter {Enabled -eq $true}  -Properties UserPrincipalName, City, StreetAddress, Department, Title, DisplayName, whenCreated, mail, manager | Select-Object DisplayName, SamAccountName, UserPrincipalName, City, StreetAddress, Department, Title, whenCreated, mail, manager | Where-Object {$_.mail -ne $null -and $_.manager -ne $null}
+
+
+#############################################################################################
+### Going through each active directory user and checking to see if they have a citrix desktop
+############################################################################################# 
+Foreach ($AD_User in $AD_Users) {
+    $i++ ### incrementing the progress bar by 1 each loop through
+    Write-Progress -Activity "All AD Users" -Status ("Checking : {0}" -f $AD_User.SamAccountName) -PercentComplete ($i/$AD_Users.count*100) -Id 0 ### Progress bar
+    $Desktop = @() ### creating blank array
+    ### Foreach statement to go through each returned Citrix DC and find desktops associated with a given user
+    Foreach ($Random_DC in $Random_DCs){
+        $Desktop += Get-BrokerDesktop -AssociatedUserUPN $AD_User.UserPrincipalName -DeliveryType DesktopsOnly -IsPhysical $False -DesktopKind Private -AdminAddress $Random_DC -MaxRecordCount 999999 | Select-Object Hostedmachinename, LastConnectionTime, SummaryState, ClientName, ClientAddress, IPAddress, AssociatedUserNames, AssociatedUserUPNs | Sort-Object -Property Hostedmachinename
+    }
+    #####################################################################
+    ### If the given AD User DOESN'T have an assigned Citrix Desktop, we will write to the csv that none is assigned
+    If (-not $Desktop){
+        $VM = "None Assigned"
+        $IP = "None Assigned"
+        $SummaryState = "None Assigned"
+        $LastConnection = "None Assigned"
+        $EndPoint = "None Assigned"
+        $EndPoint_IP = "None Assigned"
+        $Created = "None Assigned"
+        #####################################################################
+        ### Calling function to write to CSV
+        Write_to_csv
+        ### Cleaning up variables
+        Clear-Variable VM, IP, Summary_State, LastConnection, Created, EndPoint, EndPoint_IP -ErrorAction SilentlyContinue
+        #####################################################################
+    }
+    #####################################################################
+    ### If the given AD user DOES have an assigned Citrix Desktop, we will write the details for it to csv
+    Else{
+        #####################################################################
+        ### If the given AD user has more than one Citrix Desktop assigned we will account for all of them
+        If (($Desktop.HostedMachineName).count -ge 2){
+            Foreach ($item in $Desktop){
+                $VM = $item.Hostedmachinename
+                $IP = $item.IPAddress
+                $SummaryState = $item.SummaryState
+                ### Grabbing the date the active directory computer object was created
+                $Created = Get-ADComputer $item.Hostedmachinename -Properties Created | ForEach-Object {$_.Created}
+                ### If the AD user has never connected to the Citrix Desktop we will add Never Connected to the csv file for those fields
+                If ($null -eq $item.LastConnectionTime){
+                    $LastConnection = "Never Connected"
+                    $EndPoint = "Never Connected"
+                    $EndPoint_IP = "Never Connected"
+                }
+                Else{
+                    $LastConnection = $item.LastConnectionTime
+                    $EndPoint = $item.ClientName
+                    $EndPoint_IP = $item.ClientAddress
+                }
+                #####################################################################
+                ### Calling function to write to CSV
+                Write_to_csv
+                ### Cleaning up variables
+                Clear-Variable VM, IP, SummaryState, LastConnection, Created, EndPoint, EndPoint_IP -ErrorAction SilentlyContinue
+                #####################################################################
+            }
+        }
+        #####################################################################
+        ### If the given AD user has only one Citrix Desktop assigned we will write it to the csv
+        Else {
+            $VM = $Desktop.HostedMachineName
+            $IP = $Desktop.IPAddress
+            $SummaryState = $Desktop.SummaryState
+            ### Grabbing the date the active directory computer object was created
+            $Created = Get-ADComputer $Desktop.Hostedmachinename -Properties Created | ForEach-Object {$_.Created}
+            ### If the AD user has never connected to the Citrix Desktop we will add Never Connected to the csv file for those fields
+            If ($null -eq $Desktop.LastConnectionTime){
+                $LastConnection = "Never Connected"
+                $EndPoint = "Never Connected"
+                $EndPoint_IP = "Never Connected"
+            }
+            Else{
+                $LastConnection = $Desktop.LastConnectionTime
+                $EndPoint = $Desktop.ClientName
+                $EndPoint_IP = $Desktop.ClientAddress
+            }
+            #####################################################################
+            ### Calling function to write to CSV
+            Write_to_csv
+            ### Cleaning up variables
+            Clear-Variable VM, IP, SummaryState, LastConnection, Created, EndPoint, EndPoint_IP -ErrorAction SilentlyContinue
+            #####################################################################
+        }
+        #####################################################################
+    }
+    #####################################################################
+}
+#####################################################################
