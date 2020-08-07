@@ -64,7 +64,7 @@ Foreach ($AD_User in $AD_Users) {
     $Desktop = @() ### creating blank array
     ### Foreach statement to go through each returned Citrix DC and find desktops associated with a given user
     Foreach ($Random_DC in $Random_DCs){
-        $Desktop += Get-BrokerDesktop -AssociatedUserUPN $AD_User.UserPrincipalName -DeliveryType DesktopsOnly -IsPhysical $False -DesktopKind Private -AdminAddress $Random_DC -MaxRecordCount 999999 | Select-Object Hostedmachinename, LastConnectionTime, SummaryState, ClientName, ClientAddress, IPAddress, AssociatedUserNames, AssociatedUserUPNs | Sort-Object -Property Hostedmachinename
+        $Desktop += Get-BrokerDesktop -AssociatedUserUPN $AD_User.UserPrincipalName -DeliveryType DesktopsOnly -AdminAddress $Random_DC -MaxRecordCount 999999 | Select-Object Hostedmachinename, LastConnectionTime, SummaryState, ClientName, ClientAddress, IPAddress, AssociatedUserNames, AssociatedUserUPNs | Sort-Object -Property Hostedmachinename
     }
     #####################################################################
     ### If the given AD User DOESN'T have an assigned Citrix Desktop, we will write to the csv that none is assigned
