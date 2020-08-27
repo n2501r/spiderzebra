@@ -92,7 +92,6 @@ Function Compare_Results ($NetNeighbors, $Known_Hosts) {
             If ($Result.SideIndicator -eq '<='){ ### If the sideindicator equals <= it means that a host was present in the known host csv file but not in ARP cache
                 Write-Host "[Offline Host] $($Result.IPAddress) / $($Result.LinkLayerAddress) is present in the known hosts csv file but not in ARP cache"
             }
-
         }
     }
 }
