@@ -652,8 +652,12 @@ Function Duplicate_File_Finder {
         }
         #########################################################################################
         '4' {
-            ### Auto move the last file in the duplicate group
-            $Selected_Files_to_Move = $Groups_of_dupes | ForEach-Object { $_.group | Select-Object -Last 1 }
+            ### Auto move duplicate files to the duplicates directory
+            $Selected_Files_to_Move = $Groups_of_dupes | ForEach-Object {
+                $Files_in_group = $_.group | Measure-Object | ForEach-Object { $_.Count } ### Counting how many files are in the group
+                $number_to_delete = $Files_in_group - 1 ### Subtracting one from the total in the group, by doing so will keep one file from the duplicates group
+                $_.group | Select-Object -Last $number_to_delete  ### Selecting the objects to move to duplicates directory
+            }
             Write-Host $Selected_Files_to_Move.Length "Duplicate files to be moved" -ForegroundColor Cyan
             Write-Host "In the folder dialog window select the directory you want to move duplicates to" -ForegroundColor Yellow
             $DuplicateDir = Folder_Dialog -Message "Select the duplicate files directory"
